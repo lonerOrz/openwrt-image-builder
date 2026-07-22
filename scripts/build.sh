@@ -51,7 +51,7 @@ log_end
 # ============================================
 if [ "$PREFLIGHT" = "1" ] || [ "$PREFLIGHT" = "true" ]; then
   log_section "步骤 4/6: Preflight 依赖预检"
-  if ! "$SCRIPT_DIR/validate.sh" "$PROFILE_JSON" "$IB_DIR" "$WORK_DIR/sandbox"; then
+  if ! "$SCRIPT_DIR/validate.sh" "$PROFILE_JSON" "$IB_DIR"; then
     log_error "静态依赖推导未通过！请修正包列表后重试。"
     exit 1
   fi
