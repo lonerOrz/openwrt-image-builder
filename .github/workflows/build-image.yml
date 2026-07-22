@@ -1,0 +1,131 @@
+name: Build daede image
+
+on:
+  workflow_dispatch:
+    inputs:
+      device_profile:
+        description: 选择目标设备配置
+        required: true
+        default: "friendlyarm_nanopi-r2s"
+        type: choice
+        options:
+          - "friendlyarm_nanopi-r2s"
+          - "x86_64"
+      publish_release:
+        description: 把生成的固件发布到 GitHub Release
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      imagebuilder_url:
+        description: "可选：覆盖设备配置中的 ImageBuilder URL"
+        required: false
+        default: ""
+      preflight:
+        description: 构建前先检查软件包清单是否齐全
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      rootfs_partsize:
+        description: "可选：覆盖设备配置中的根分区大小（MB）"
+        required: false
+        default: ""
+      install_daede:
+        description: 把 luci-app-daede 打进固件
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      daede_release_tag:
+        description: luci-app-daede 的 release 版本，默认 latest 取最新
+        required: true
+        default: "latest"
+      daede_apk_url:
+        description: 可选，直接指定 luci-app-daede 的 APK 下载地址
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install host dependencies
+        run: |
+          # act 容器以 root 运行，不需要 sudo；GitHub Actions 需要 sudo
+          if command -v sudo &>/dev/null; then SUDO=sudo; else SUDO=""; fi
+          $SUDO apt-get update
+          $SUDO apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-distutils \
+            rsync \
+            unzip \
+            zstd \
+            file \
+            wget \
+            curl
+
+      - name: Build image
+        env:
+          DEVICE_PROFILE: ${{ inputs.device_profile }}
+          IMAGEBUILDER_URL: ${{ inputs.imagebuilder_url }}
+          PREFLIGHT: ${{ inputs.preflight }}
+          ROOTFS_PARTSIZE: ${{ inputs.rootfs_partsize }}
+          INSTALL_DAEDE: ${{ inputs.install_daede }}
+          DAEDE_RELEASE_TAG: ${{ inputs.daede_release_tag }}
+          DAEDE_APK_URL: ${{ inputs.daede_apk_url }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OUT_DIR: ${{ github.workspace }}/out
+        run: |
+          chmod +x scripts/build-image.sh
+          scripts/build-image.sh
+
+      - name: Set artifact name
+        id: artifact
+        run: |
+          if [ -f "out/.extra_image_name" ]; then
+            echo "name=immortalwrt-$(cat out/.extra_image_name)" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=immortalwrt-${{ inputs.device_profile }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: out/*
+          if-no-files-found: error
+
+      - name: Publish release
+        if: inputs.publish_release == 'true'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: daede-${{ inputs.device_profile }}-${{ github.run_number }}
+          name: daede ${{ inputs.device_profile }} 固件 ${{ github.run_number }}
+          artifacts: out/*
+          allowUpdates: true
+          replacesArtifacts: true
+          bodyFile: out/BUILD-MANIFEST.txt
