@@ -66,10 +66,8 @@ jobs:
 
       - name: Install host dependencies
         run: |
-          # act 容器以 root 运行，不需要 sudo；GitHub Actions 需要 sudo
-          if command -v sudo &>/dev/null; then SUDO=sudo; else SUDO=""; fi
-          $SUDO apt-get update
-          $SUDO apt-get install -y \
+          sudo apt-get update
+          sudo apt-get install -y \
             build-essential \
             clang \
             flex \

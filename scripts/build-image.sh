@@ -88,12 +88,14 @@ if token:
 with urllib.request.urlopen(request, timeout=30) as response:
     release = json.load(response)
 
-suffix = f"-{arch}.apk"
+# APK 文件名格式: luci-app-daede-1.14.7-r17-aarch64_cortex-a53.apk
+# 架构后缀可能是 aarch64_cortex-a53, aarch64_generic, x86_64 等
+# 用子串匹配：aarch64 能匹配所有 aarch64_* 变体
 matches = [
     asset.get("browser_download_url") or asset.get("url")
     for asset in release.get("assets", [])
     if asset.get("name", "").startswith("luci-app-daede-")
-    and asset.get("name", "").endswith(suffix)
+    and f"-{arch}" in asset.get("name", "")
 ]
 
 if not matches:
