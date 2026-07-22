@@ -42,10 +42,7 @@ OUT_DIR="${OUT_DIR:-$PWD/out}"
 PREFLIGHT="${PREFLIGHT:-1}"
 ROOTFS_PARTSIZE="${ROOTFS_PARTSIZE:-512}"
 INSTALL_DAEDE="${INSTALL_DAEDE:-1}"
-DAEDE_REPO="${DAEDE_REPO:-kenzok8/openwrt-daede}"
-DAEDE_RELEASE_TAG="${DAEDE_RELEASE_TAG:-latest}"
 DAEDE_ARCH="${DAEDE_ARCH:-aarch64}"
-DAEDE_APK_URL="${DAEDE_APK_URL:-}"
 
 EXTRA_PACKAGES="${EXTRA_PACKAGES:-luci-theme-argon luci-app-daede kmod-sched-core curl nano nginx openssl-util}"
 REMOVE_PACKAGES="${REMOVE_PACKAGES:--luci-app-wifihistory -luci-app-advancedplus -luci-app-filemanager -luci-app-wizard -coremark -ds-lite -usb-modeswitch -luci-app-attendedsysupgrade}"
@@ -56,77 +53,60 @@ IB_ARCHIVE="$WORK_DIR/imagebuilder.tar.zst"
 
 mkdir -p "$WORK_DIR" "$OUT_DIR"
 
-resolve_daede_apk_url() {
-  if [ -n "$DAEDE_APK_URL" ]; then
-    printf '%s\n' "$DAEDE_APK_URL"
-    return
-  fi
-
-  local release_api
-  if [ "$DAEDE_RELEASE_TAG" = "latest" ]; then
-    release_api="https://api.github.com/repos/$DAEDE_REPO/releases/latest"
-  else
-    release_api="https://api.github.com/repos/$DAEDE_REPO/releases/tags/$DAEDE_RELEASE_TAG"
-  fi
-
-  python3 - "$release_api" "$DAEDE_ARCH" <<'PY'
-import json
-import os
-import sys
-import urllib.request
-
-release_api, arch = sys.argv[1:3]
-request = urllib.request.Request(
-    release_api,
-    headers={
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "kenzok8-imagebuilder",
-    },
-)
-token = os.environ.get("GITHUB_TOKEN")
-if token:
-    request.add_header("Authorization", f"Bearer {token}")
-
-with urllib.request.urlopen(request, timeout=30) as response:
-    release = json.load(response)
-
-# APK 文件名格式: luci-app-daede-1.14.7-r17-aarch64_cortex-a53.apk
-# 架构后缀可能是 aarch64_cortex-a53, aarch64_generic, x86_64 等
-# 用子串匹配：aarch64 能匹配所有 aarch64_* 变体
-matches = [
-    asset.get("browser_download_url") or asset.get("url")
-    for asset in release.get("assets", [])
-    if asset.get("name", "").startswith("luci-app-daede-")
-    and f"-{arch}" in asset.get("name", "")
-]
-
-if not matches:
-    tag = release.get("tag_name", release_api)
-    raise SystemExit(f"luci-app-daede APK for {arch} not found in {tag}")
-
-print(matches[0])
-PY
-}
-
-install_daede_apk() {
+configure_daede_feed() {
   case "$INSTALL_DAEDE" in
     1|true|yes) ;;
     *)
-      echo "Skipping luci-app-daede release APK download."
+      echo "Skipping daede feed configuration."
       return
       ;;
   esac
 
-  local packages_dir="$WORK_DIR/imagebuilder/packages"
-  local daede_url
-  daede_url="$(resolve_daede_apk_url)"
-  mkdir -p "$packages_dir"
+  local ib_dir="$WORK_DIR/imagebuilder"
+  local repos_file="$ib_dir/repositories"
+  local feed_base="https://down.dllkids.xyz/openwrt-feed/25.12"
 
-  local fname="${daede_url##*/}"
+  # Architecture candidates: exact arch → common sub-archs → all
+  local arch_candidates=("$DAEDE_ARCH")
+  case "$DAEDE_ARCH" in
+    aarch64|arm64)
+      arch_candidates+=("aarch64_cortex-a53" "aarch64_cortex-a72" "aarch64_generic")
+      ;;
+    aarch64_*)
+      [ "$DAEDE_ARCH" = "aarch64_generic" ] || arch_candidates+=("aarch64_generic")
+      ;;
+  esac
+  arch_candidates+=("all")
 
-  echo "Downloading luci-app-daede APK: $daede_url -> $fname"
-  curl -L --retry 8 --retry-delay 5 --connect-timeout 30 \
-    -o "$packages_dir/$fname" "$daede_url"
+  # Find a working feed
+  local feed_url=""
+  for arch in "${arch_candidates[@]}"; do
+    local candidate_url="$feed_base/$arch/packages.adb"
+    if curl -fsSL -o /dev/null "$candidate_url" 2>/dev/null; then
+      feed_url="$candidate_url"
+      echo "Found daede feed: $arch"
+      break
+    fi
+  done
+
+  if [ -z "$feed_url" ]; then
+    echo "ERROR: No daede feed found for $DAEDE_ARCH (tried: ${arch_candidates[*]})" >&2
+    exit 1
+  fi
+
+  # Add feed to ImageBuilder repositories
+  echo "$feed_url" >> "$repos_file"
+  echo "Added daede feed: $feed_url"
+
+  # Install signing key to rootfs so flashed firmware can verify daede packages
+  local key_dir="$ib_dir/files/etc/apk/keys"
+  mkdir -p "$key_dir"
+  if curl -fsSL -o "$key_dir/dllkids-feed.pub.pem" \
+    "https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem" 2>/dev/null; then
+    echo "Installed daede feed signing key"
+  else
+    echo "WARNING: Failed to download daede signing key" >&2
+  fi
 }
 
 install_custom_packages() {
@@ -169,28 +149,12 @@ if [ -d "$DEVICE_OVERLAY" ]; then
 fi
 log_end
 
-log_section "安装 daede APK"
-install_daede_apk
+log_section "配置 daede 仓库"
+configure_daede_feed
 log_end
 
 log_section "安装第三方包"
 install_custom_packages
-log_end
-
-# 重建 APK 索引（确保本地 .apk 文件被正确索引）
-log_section "重建 APK 索引"
-PACKAGES_DIR="$WORK_DIR/imagebuilder/packages"
-if [ -d "$PACKAGES_DIR" ] && ls "$PACKAGES_DIR"/*.apk >/dev/null 2>&1; then
-  rm -f "$PACKAGES_DIR/packages.adb"
-  if (cd "$PACKAGES_DIR" && "../staging_dir/host/bin/apk" mkndx \
-      --allow-untrusted --output packages.adb *.apk 2>&1); then
-    echo "APK 索引已重建: $(ls "$PACKAGES_DIR"/*.apk 2>/dev/null | wc -l) 个包"
-  else
-    echo "WARNING: apk mkndx 失败，本地包可能无法被识别"
-  fi
-else
-  echo "无本地 .apk 文件，跳过索引重建"
-fi
 log_end
 
 cd "$WORK_DIR/imagebuilder"
@@ -205,8 +169,7 @@ echo "Rootfs part size: ${ROOTFS_PARTSIZE}MB"
 echo "Install: $EXTRA_PACKAGES"
 echo "Remove: $REMOVE_PACKAGES"
 echo "Custom packages: ${CUSTOM_PACKAGES:-(none)}"
-echo "Install daede APK: $INSTALL_DAEDE"
-echo "Daede release: $DAEDE_REPO@$DAEDE_RELEASE_TAG ($DAEDE_ARCH)"
+echo "Daede feed: $INSTALL_DAEDE (arch: $DAEDE_ARCH)"
 mkdir -p "$OUT_DIR"
 echo "extra_packages=$PACKAGES" > "$OUT_DIR/.extra_packages"
 echo "$EXTRA_IMAGE_NAME" > "$OUT_DIR/.extra_image_name"
@@ -216,28 +179,20 @@ diagnose_failure() {
 
 ImageBuilder failed.
 
-Common causes for this daede image:
+Common causes:
 - The selected ImmortalWrt snapshot ImageBuilder and package feeds are out of sync.
-  Example: base packages require a newer libubox/libblobmsg-json than the public feed provides.
-- luci-app-daede or one of the dae/daed dependencies
-  (kmod-sched-core) is missing from the selected target's kmod feed
-  for the current kernel version.
-- The luci-app-daede release APK was not copied into the local ImageBuilder packages
-  directory, or its architecture does not match the selected target.
+- luci-app-daede or dae/daed dependencies (kmod-sched-core) are missing from
+  the selected target's kmod feed for the current kernel version.
+- The daede feed (down.dllkids.xyz) may be temporarily unavailable.
 
 About BTF (no longer a blocker on 25.12):
 - ImmortalWrt 25.12 kernels enable CONFIG_DEBUG_INFO_BTF by default. dae/daed reads BTF
   directly from /sys/kernel/btf/vmlinux at runtime and does NOT require a separate
-  vmlinux-btf package. Do not add vmlinux-btf to EXTRA_PACKAGES — it is not published
-  in the feed and ImageBuilder cannot build it.
-- If you ever target an older OpenWrt release whose kernel lacks built-in BTF, build
-  vmlinux-btf via a full SDK build first (ImageBuilder cannot compile packages).
+  vmlinux-btf package.
 
 Next choices:
-- Retry later with the same 25.12-SNAPSHOT URL after ImmortalWrt feeds finish syncing.
-- Use a release/rc ImageBuilder URL and rebuild daede/dae/daed APKs against that release/rc.
-- Override DAEDE_RELEASE_TAG, DAEDE_ARCH, or DAEDE_APK_URL if you need a specific
-  luci-app-daede release asset.
+- Retry later after feeds finish syncing.
+- Set INSTALL_DAEDE=0 to build without daede and install it post-flash.
 - Verify kmod-* packages exist for the target+kernel combo via:
     make manifest PROFILE="$PROFILE" PACKAGES="$PACKAGES"
 EOF
@@ -245,8 +200,6 @@ EOF
 
 log_section "Preflight 检查"
 if [ "$PREFLIGHT" = "1" ] || [ "$PREFLIGHT" = "true" ]; then
-  # 确保 packages.adb 被重建（ImageBuilder 的 package_reload 可能跳过）
-  rm -f "$WORK_DIR/imagebuilder/packages/packages.adb"
   if ! make manifest PROFILE="$PROFILE" PACKAGES="$PACKAGES"; then
     diagnose_failure
     exit 1

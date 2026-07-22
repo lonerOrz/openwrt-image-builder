@@ -36,21 +36,13 @@ on:
         required: false
         default: ""
       install_daede:
-        description: 把 luci-app-daede 打进固件
+        description: 把 luci-app-daede 打进固件（通过 daede feed 仓库）
         required: true
         default: "true"
         type: choice
         options:
           - "true"
           - "false"
-      daede_release_tag:
-        description: luci-app-daede 的 release 版本，默认 latest 取最新
-        required: true
-        default: "latest"
-      daede_apk_url:
-        description: 可选，直接指定 luci-app-daede 的 APK 下载地址
-        required: false
-        default: ""
       remove_packages:
         description: "可选：覆盖设备配置中的移除包列表（留空使用配置默认值）"
         required: false
@@ -101,11 +93,8 @@ jobs:
           PREFLIGHT: ${{ inputs.preflight }}
           ROOTFS_PARTSIZE: ${{ inputs.rootfs_partsize }}
           INSTALL_DAEDE: ${{ inputs.install_daede }}
-          DAEDE_RELEASE_TAG: ${{ inputs.daede_release_tag }}
-          DAEDE_APK_URL: ${{ inputs.daede_apk_url }}
           REMOVE_PACKAGES: ${{ inputs.remove_packages }}
           CUSTOM_PACKAGES: ${{ inputs.custom_packages }}
-          GITHUB_TOKEN: ${{ github.token }}
           OUT_DIR: ${{ github.workspace }}/out
         run: |
           chmod +x scripts/build-image.sh
