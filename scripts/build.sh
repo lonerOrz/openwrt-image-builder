@@ -3,19 +3,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/package_manager.sh"
 source "$SCRIPT_DIR/lib/bootstrap.sh"
 
 PROFILE_JSON="${1:-}"
-SCHEMA_JSON="${SCRIPT_DIR}/../config/schema.json"
-WORK_DIR="${WORK_DIR:-$PWD/work}"
-OUT_DIR="${OUT_DIR:-$PWD/out}"
+SCHEMA_JSON="$REPO_DIR/config/schema.json"
+WORK_DIR="${WORK_DIR:-$REPO_DIR/work}"
+OUT_DIR="${OUT_DIR:-$REPO_DIR/out}"
 PREFLIGHT="${PREFLIGHT:-1}"
 
 if [ -z "$PROFILE_JSON" ] || [ ! -f "$PROFILE_JSON" ]; then
   log_error "请指定配置文件，如: ./scripts/build.sh config/profiles/friendlyarm_nanopi-r2s.json"
   exit 1
+fi
+
+# 确保传入的配置文件路径是绝对路径
+if [[ "$PROFILE_JSON" != /* ]]; then
+  PROFILE_JSON="$PWD/$PROFILE_JSON"
 fi
 
 mkdir -p "$WORK_DIR" "$OUT_DIR"
@@ -64,12 +70,12 @@ fi
 # ============================================
 log_section "步骤 5/6: 注入自定义系统配置文件"
 rm -rf "$IB_DIR/files"
-if [ -d "files" ]; then
-  cp -a files "$IB_DIR/files"
+if [ -d "$REPO_DIR/files" ]; then
+  cp -a "$REPO_DIR/files" "$IB_DIR/files"
 fi
 
 # 合并设备专属 overlay（如果有）
-PROFILE_DIR="${PROFILE_DIR:-$(dirname "$PROFILE_JSON")}"
+PROFILE_DIR="$(dirname "$PROFILE_JSON")"
 DEVICE_PROFILE=$(jq -r '.profile' "$PROFILE_JSON")
 DEVICE_OVERLAY="${PROFILE_DIR}/${DEVICE_PROFILE}/files"
 if [ -d "$DEVICE_OVERLAY" ]; then

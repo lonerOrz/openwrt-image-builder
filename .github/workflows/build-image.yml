@@ -52,6 +52,7 @@ jobs:
         env:
           PREFLIGHT: ${{ inputs.preflight }}
           OUT_DIR: ${{ github.workspace }}/out
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           chmod +x scripts/*.sh scripts/lib/*.sh
           scripts/build.sh "config/profiles/${{ inputs.profile }}.json"

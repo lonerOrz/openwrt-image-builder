@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/bootstrap.sh"
 
@@ -12,7 +13,12 @@ if [ -z "$PROFILE_JSON" ] || [ ! -f "$PROFILE_JSON" ]; then
   exit 1
 fi
 
-WORK_DIR="$PWD/work"
+# 确保绝对路径
+if [[ "$PROFILE_JSON" != /* ]]; then
+  PROFILE_JSON="$PWD/$PROFILE_JSON"
+fi
+
+WORK_DIR="${WORK_DIR:-$REPO_DIR/work}"
 mkdir -p "$WORK_DIR"
 
 log_section "引导环境初始化"
@@ -24,8 +30,8 @@ TARGET_PROFILE=$(jq -r '.profile' "$PROFILE_JSON")
 log_section "设备 [$TARGET_PROFILE] 默认集成的基础包列表"
 cd "$IB_DIR"
 
-# 通过 make manifest 获取默认打包到 ROM 里的基础包
-DEFAULT_PACKAGES=$(make manifest PROFILE="$TARGET_PROFILE" 2>/dev/null | grep -v "^Manifest" | tr ' ' '\n' | sort -u || true)
+# 通过 make manifest 获取默认打包到 ROM 里的基础包，过滤掉 make 输出和 Manifest 头
+DEFAULT_PACKAGES=$(make manifest PROFILE="$TARGET_PROFILE" 2>/dev/null | grep -v -E "^(Manifest|make)" | tr ' ' '\n' | grep -v '^$' | sort -u || true)
 
 COUNT=$(echo "$DEFAULT_PACKAGES" | grep -c . || true)
 echo ""
