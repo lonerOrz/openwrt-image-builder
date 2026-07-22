@@ -4,9 +4,9 @@ set -euo pipefail
 # 统一日志格式（GitHub Actions compatible）
 log_info() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "::notice::$1"
+    echo "::notice::$1" >&2
   else
-    echo -e "\033[1;32m[INFO]\033[0m $1"
+    echo -e "\033[1;32m[INFO]\033[0m $1" >&2
   fi
 }
 
@@ -28,16 +28,16 @@ log_error() {
 
 log_section() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "::group::[$(date '+%H:%M:%S')] $1"
+    echo "::group::[$(date '+%H:%M:%S')] $1" >&2
   else
-    echo ""
-    echo "=== $1 ==="
+    echo "" >&2
+    echo "=== $1 ===" >&2
   fi
 }
 
 log_end() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "::endgroup::"
+    echo "::endgroup::" >&2
   fi
 }
 

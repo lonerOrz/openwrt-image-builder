@@ -133,6 +133,6 @@ rebuild_local_index() {
     log_info "本地 APK 索引重建完毕（$count 个包）。"
   else
     log_error "apk mkndx 失败，本地包可能无法被识别"
-    exit 1
+    return 1
   fi
 }
