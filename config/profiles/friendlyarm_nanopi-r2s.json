@@ -1,0 +1,38 @@
+{
+  "target": "rockchip/armv8",
+  "profile": "friendlyarm_nanopi-r2s",
+  "extra_image_name": "r2s",
+  "rootfs_partsize": 512,
+  "daede_arch": "aarch64_cortex-a53",
+  "imagebuilder_url": "https://downloads.immortalwrt.org/releases/25.12-SNAPSHOT/targets/rockchip/armv8/immortalwrt-imagebuilder-25.12-SNAPSHOT-rockchip-armv8.Linux-x86_64.tar.zst",
+  "packages": {
+    "add": [
+      "luci-theme-argon",
+      "luci-app-daede",
+      "kmod-sched-core",
+      "curl",
+      "nano",
+      "nginx",
+      "openssl-util"
+    ],
+    "remove": [
+      "luci-app-wifihistory",
+      "luci-app-advancedplus",
+      "luci-app-filemanager",
+      "luci-app-wizard",
+      "coremark",
+      "ds-lite",
+      "usb-modeswitch",
+      "luci-app-attendedsysupgrade"
+    ]
+  },
+  "custom_apks": [
+    {
+      "name": "luci-app-daede",
+      "source_type": "github_release",
+      "repo": "kenzok8/openwrt-daede",
+      "tag": "latest",
+      "arch": "aarch64_cortex-a53"
+    }
+  ]
+}

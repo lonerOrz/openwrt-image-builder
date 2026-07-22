@@ -1,0 +1,39 @@
+{
+  "target": "x86/64",
+  "profile": "generic",
+  "extra_image_name": "x86",
+  "rootfs_partsize": 1024,
+  "daede_arch": "x86_64",
+  "imagebuilder_url": "https://downloads.immortalwrt.org/releases/25.12-SNAPSHOT/targets/x86/64/immortalwrt-imagebuilder-25.12-SNAPSHOT-x86-64.Linux-x86_64.tar.zst",
+  "packages": {
+    "add": [
+      "luci-theme-argon",
+      "luci-app-daede",
+      "kmod-sched-core",
+      "kmod-sched-bpf",
+      "kmod-veth",
+      "kmod-xdp-sockets-diag",
+      "curl",
+      "nano",
+      "nginx",
+      "openssl-util"
+    ],
+    "remove": [
+      "luci-app-wifihistory",
+      "luci-app-advancedplus",
+      "luci-app-filemanager",
+      "luci-app-wizard",
+      "coremark",
+      "ds-lite"
+    ]
+  },
+  "custom_apks": [
+    {
+      "name": "luci-app-daede",
+      "source_type": "github_release",
+      "repo": "kenzok8/openwrt-daede",
+      "tag": "latest",
+      "arch": "x86_64"
+    }
+  ]
+}

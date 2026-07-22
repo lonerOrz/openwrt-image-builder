@@ -3,7 +3,7 @@ name: Build daede image
 on:
   workflow_dispatch:
     inputs:
-      device_profile:
+      profile:
         description: 选择目标设备配置
         required: true
         default: "friendlyarm_nanopi-r2s"
@@ -19,46 +19,14 @@ on:
         options:
           - "false"
           - "true"
-      imagebuilder_url:
-        description: "可选：覆盖设备配置中的 ImageBuilder URL"
-        required: false
-        default: ""
       preflight:
-        description: 构建前先检查软件包清单是否齐全
+        description: 构建前运行依赖预检
         required: true
         default: "true"
         type: choice
         options:
           - "true"
           - "false"
-      rootfs_partsize:
-        description: "可选：覆盖设备配置中的根分区大小（MB）"
-        required: false
-        default: ""
-      install_daede:
-        description: 把 luci-app-daede 打进固件
-        required: true
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
-      daede_release_tag:
-        description: luci-app-daede 的 release 版本，默认 latest 取最新
-        required: true
-        default: "latest"
-      daede_apk_url:
-        description: 可选，直接指定 luci-app-daede 的 APK 下载地址
-        required: false
-        default: ""
-      remove_packages:
-        description: "可选：覆盖设备配置中的移除包列表（留空使用配置默认值）"
-        required: false
-        default: ""
-      custom_packages:
-        description: "可选：第三方包 URL，格式 包名=URL，每行一个"
-        required: false
-        default: ""
 
 permissions:
   contents: write
@@ -76,49 +44,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            clang \
-            flex \
-            bison \
-            gawk \
-            gettext \
-            git \
-            libncurses-dev \
-            libssl-dev \
-            python3 \
-            python3-distutils \
-            rsync \
-            unzip \
-            zstd \
-            file \
-            wget \
-            curl
+            build-essential clang flex bison gawk gettext git \
+            libncurses-dev libssl-dev python3 python3-distutils \
+            rsync unzip zstd file wget curl jq
 
       - name: Build image
         env:
-          DEVICE_PROFILE: ${{ inputs.device_profile }}
-          IMAGEBUILDER_URL: ${{ inputs.imagebuilder_url }}
           PREFLIGHT: ${{ inputs.preflight }}
-          ROOTFS_PARTSIZE: ${{ inputs.rootfs_partsize }}
-          INSTALL_DAEDE: ${{ inputs.install_daede }}
-          DAEDE_RELEASE_TAG: ${{ inputs.daede_release_tag }}
-          DAEDE_APK_URL: ${{ inputs.daede_apk_url }}
-          REMOVE_PACKAGES: ${{ inputs.remove_packages }}
-          CUSTOM_PACKAGES: ${{ inputs.custom_packages }}
-          GITHUB_TOKEN: ${{ github.token }}
           OUT_DIR: ${{ github.workspace }}/out
         run: |
-          chmod +x scripts/build-image.sh
-          scripts/build-image.sh
+          chmod +x scripts/*.sh scripts/lib/*.sh
+          scripts/build.sh "config/profiles/${{ inputs.profile }}.json"
 
       - name: Set artifact name
         id: artifact
         run: |
-          if [ -f "out/.extra_image_name" ]; then
-            echo "name=immortalwrt-$(cat out/.extra_image_name)" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=immortalwrt-${{ inputs.device_profile }}" >> "$GITHUB_OUTPUT"
-          fi
+          EXTRA_NAME=$(jq -r '.extra_image_name' "config/profiles/${{ inputs.profile }}.json")
+          echo "name=daede-${EXTRA_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -131,9 +73,8 @@ jobs:
         if: inputs.publish_release == 'true'
         uses: ncipollo/release-action@v1
         with:
-          tag: daede-${{ inputs.device_profile }}-${{ github.run_number }}
-          name: daede ${{ inputs.device_profile }} 固件 ${{ github.run_number }}
+          tag: daede-${{ inputs.profile }}-${{ github.run_number }}
+          name: daede ${{ inputs.profile }} 固件 ${{ github.run_number }}
           artifacts: out/*
           allowUpdates: true
           replacesArtifacts: true
-          bodyFile: out/BUILD-MANIFEST.txt

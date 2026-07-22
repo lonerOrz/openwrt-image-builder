@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "required": ["target", "profile", "extra_image_name", "rootfs_partsize", "imagebuilder_url", "packages"],
+  "properties": {
+    "target": { "type": "string" },
+    "profile": { "type": "string" },
+    "extra_image_name": { "type": "string" },
+    "rootfs_partsize": { "type": "integer" },
+    "imagebuilder_url": { "type": "string" },
+    "daede_arch": { "type": "string" },
+    "packages": {
+      "type": "object",
+      "required": ["add", "remove"],
+      "properties": {
+        "add": { "type": "array", "items": { "type": "string" } },
+        "remove": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "custom_apks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "source_type"],
+        "properties": {
+          "name": { "type": "string" },
+          "source_type": { "type": "string", "enum": ["github_release", "direct_url"] },
+          "repo": { "type": "string" },
+          "tag": { "type": "string" },
+          "arch": { "type": "string" },
+          "url": { "type": "string" }
+        }
+      }
+    }
+  }
+}
