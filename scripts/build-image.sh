@@ -47,7 +47,7 @@ DAEDE_RELEASE_TAG="${DAEDE_RELEASE_TAG:-latest}"
 DAEDE_ARCH="${DAEDE_ARCH:-aarch64}"
 DAEDE_APK_URL="${DAEDE_APK_URL:-}"
 
-EXTRA_PACKAGES="${EXTRA_PACKAGES:-luci luci-i18n-base-zh-cn luci-i18n-package-manager-zh-cn luci-theme-alpha luci-theme-argon luci-app-daede kmod-sched-core curl nano nginx openssl-util -luci-app-wifihistory -luci-app-advancedplus -luci-app-filemanager -luci-app-wizard -coremark -ds-lite -usb-modeswitch -luci-app-attendedsysupgrade}"
+EXTRA_PACKAGES="${EXTRA_PACKAGES:-luci luci-i18n-base-zh-cn luci-i18n-package-manager-zh-cn luci-theme-argon luci-app-daede kmod-sched-core curl nano nginx openssl-util -luci-app-wifihistory -luci-app-advancedplus -luci-app-filemanager -luci-app-wizard -coremark -ds-lite -usb-modeswitch -luci-app-attendedsysupgrade}"
 
 WORK_DIR="${WORK_DIR:-$PWD/work}"
 IB_ARCHIVE="$WORK_DIR/imagebuilder.tar.zst"
