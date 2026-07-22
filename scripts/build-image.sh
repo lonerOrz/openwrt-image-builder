@@ -47,7 +47,9 @@ DAEDE_RELEASE_TAG="${DAEDE_RELEASE_TAG:-latest}"
 DAEDE_ARCH="${DAEDE_ARCH:-aarch64}"
 DAEDE_APK_URL="${DAEDE_APK_URL:-}"
 
-EXTRA_PACKAGES="${EXTRA_PACKAGES:-luci luci-i18n-base-zh-cn luci-i18n-package-manager-zh-cn luci-theme-argon luci-app-daede kmod-sched-core curl nano nginx openssl-util -luci-app-wifihistory -luci-app-advancedplus -luci-app-filemanager -luci-app-wizard -coremark -ds-lite -usb-modeswitch -luci-app-attendedsysupgrade}"
+EXTRA_PACKAGES="${EXTRA_PACKAGES:-luci-theme-argon luci-app-daede kmod-sched-core curl nano nginx openssl-util}"
+REMOVE_PACKAGES="${REMOVE_PACKAGES:--luci-app-wifihistory -luci-app-advancedplus -luci-app-filemanager -luci-app-wizard -coremark -ds-lite -usb-modeswitch -luci-app-attendedsysupgrade}"
+CUSTOM_PACKAGES="${CUSTOM_PACKAGES:-}"
 
 WORK_DIR="${WORK_DIR:-$PWD/work}"
 IB_ARCHIVE="$WORK_DIR/imagebuilder.tar.zst"
@@ -127,6 +129,23 @@ install_daede_apk() {
     -o "$packages_dir/$fname" "$daede_url"
 }
 
+install_custom_packages() {
+  [ -z "$CUSTOM_PACKAGES" ] && return
+
+  local packages_dir="$WORK_DIR/imagebuilder/packages"
+  mkdir -p "$packages_dir"
+
+  echo "$CUSTOM_PACKAGES" | while IFS='=' read -r pkg_name pkg_url; do
+    pkg_name="$(echo "$pkg_name" | xargs)"
+    pkg_url="$(echo "$pkg_url" | xargs)"
+    [ -z "$pkg_name" ] || [ -z "$pkg_url" ] && continue
+    local fname="${pkg_url##*/}"
+    echo "Downloading custom package: $pkg_name -> $fname"
+    curl -L --retry 8 --retry-delay 5 --connect-timeout 30 \
+      -o "$packages_dir/$fname" "$pkg_url"
+  done
+}
+
 log_section "下载 ImageBuilder"
 if [ ! -s "$IB_ARCHIVE" ]; then
   curl -L --retry 8 --retry-delay 5 --connect-timeout 30 \
@@ -154,17 +173,26 @@ log_section "安装 daede APK"
 install_daede_apk
 log_end
 
+log_section "安装第三方包"
+install_custom_packages
+log_end
+
 cd "$WORK_DIR/imagebuilder"
+
+# 合并包列表: 安装的包 + 要移除的包
+PACKAGES="$EXTRA_PACKAGES $REMOVE_PACKAGES"
 
 echo "Version: $VERSION"
 echo "Target: $TARGET"
 echo "Profile: $PROFILE"
 echo "Rootfs part size: ${ROOTFS_PARTSIZE}MB"
-echo "Extra packages: $EXTRA_PACKAGES"
+echo "Install: $EXTRA_PACKAGES"
+echo "Remove: $REMOVE_PACKAGES"
+echo "Custom packages: ${CUSTOM_PACKAGES:-(none)}"
 echo "Install daede APK: $INSTALL_DAEDE"
 echo "Daede release: $DAEDE_REPO@$DAEDE_RELEASE_TAG ($DAEDE_ARCH)"
 mkdir -p "$OUT_DIR"
-echo "extra_packages=$EXTRA_PACKAGES" > "$OUT_DIR/.extra_packages"
+echo "extra_packages=$PACKAGES" > "$OUT_DIR/.extra_packages"
 echo "$EXTRA_IMAGE_NAME" > "$OUT_DIR/.extra_image_name"
 
 diagnose_failure() {
@@ -195,13 +223,13 @@ Next choices:
 - Override DAEDE_RELEASE_TAG, DAEDE_ARCH, or DAEDE_APK_URL if you need a specific
   luci-app-daede release asset.
 - Verify kmod-* packages exist for the target+kernel combo via:
-    make manifest PROFILE="$PROFILE" PACKAGES="$EXTRA_PACKAGES"
+    make manifest PROFILE="$PROFILE" PACKAGES="$PACKAGES"
 EOF
 }
 
 log_section "Preflight 检查"
 if [ "$PREFLIGHT" = "1" ] || [ "$PREFLIGHT" = "true" ]; then
-  if ! make manifest PROFILE="$PROFILE" PACKAGES="$EXTRA_PACKAGES"; then
+  if ! make manifest PROFILE="$PROFILE" PACKAGES="$PACKAGES"; then
     diagnose_failure
     exit 1
   fi
@@ -213,7 +241,7 @@ log_end
 log_section "构建固件"
 if ! make image \
     PROFILE="$PROFILE" \
-    PACKAGES="$EXTRA_PACKAGES" \
+    PACKAGES="$PACKAGES" \
     FILES=files \
     BIN_DIR="$OUT_DIR" \
     EXTRA_IMAGE_NAME="$EXTRA_IMAGE_NAME" \
@@ -310,9 +338,9 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo ""
     echo "### 软件包"
     echo ""
-    echo "\`\`\`"
-    echo "$EXTRA_PACKAGES"
-    echo "\`\`\`"
+    echo "**安装:** \`$EXTRA_PACKAGES\`"
+    echo ""
+    echo "**移除:** \`$REMOVE_PACKAGES\`"
   } >> "$GITHUB_STEP_SUMMARY"
 fi
 
