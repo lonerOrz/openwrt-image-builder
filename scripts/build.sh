@@ -46,9 +46,8 @@ log_end
 # ============================================
 # 步骤 3: 处理第三方 APK + 重建本地索引
 # ============================================
-log_section "步骤 3/6: 处理并注册第三方 APK"
+log_section "步骤 3/6: 处理第三方 APK"
 process_custom_apks "$IB_DIR" "$PROFILE_JSON"
-rebuild_local_index "$IB_DIR"
 log_end
 
 # ============================================
@@ -114,6 +113,8 @@ log_info "Rootfs: ${ROOTFS_SIZE}MB"
 log_info "Packages: $FINAL_PKGS"
 
 cd "$IB_DIR"
+# 允许信任本地 APK 索引（unsigned/untrusted 签名）
+export APK_ALLOW_UNTRUSTED=1
 if ! make image \
     PROFILE="$TARGET_PROFILE" \
     PACKAGES="$FINAL_PKGS" \
