@@ -43,7 +43,6 @@ log_end
 # ============================================
 log_section "步骤 3/6: 处理第三方 APK"
 process_custom_apks "$IB_DIR" "$PROFILE_JSON"
-rebuild_local_index "$IB_DIR"
 log_end
 
 # ============================================
