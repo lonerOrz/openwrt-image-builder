@@ -121,7 +121,6 @@ install_daede_apk() {
   mkdir -p "$packages_dir"
 
   local fname="${daede_url##*/}"
-  fname="${fname%-${DAEDE_ARCH}.apk}.apk"
 
   echo "Downloading luci-app-daede APK: $daede_url -> $fname"
   curl -L --retry 8 --retry-delay 5 --connect-timeout 30 \
