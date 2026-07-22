@@ -90,11 +90,12 @@ if token:
 with urllib.request.urlopen(request, timeout=30) as response:
     release = json.load(response)
 
+suffix = f"-{arch}.apk"
 matches = [
     asset.get("browser_download_url") or asset.get("url")
     for asset in release.get("assets", [])
     if asset.get("name", "").startswith("luci-app-daede-")
-    and f"-{arch}" in asset.get("name", "")
+    and asset.get("name", "").endswith(suffix)
 ]
 
 if not matches:
@@ -119,7 +120,12 @@ install_daede_apk() {
   daede_url="$(resolve_daede_apk_url)"
   mkdir -p "$packages_dir"
 
+  # Strip the -<arch> suffix from the release filename. apk mkndx indexes the
+  # package under its canonical name-version.apk; if the file keeps the
+  # -x86_64 suffix the index entry points to a missing file and the build
+  # fails with "package mentioned in index not found".
   local fname="${daede_url##*/}"
+  fname="${fname%-${DAEDE_ARCH}.apk}.apk"
 
   echo "Downloading luci-app-daede APK: $daede_url -> $fname"
   curl -L --retry 8 --retry-delay 5 --connect-timeout 30 \
