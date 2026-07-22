@@ -1,82 +1,186 @@
 # imagebuilder
 
-构建一个包含 [`luci-app-daede`](https://github.com/kenzok8/openwrt-daede) 的
-ImmortalWrt 测试固件，支持多种设备配置。
+构建包含 [`luci-app-daede`](https://github.com/kenzok8/openwrt-daede) 的
+ImmortalWrt 固件，支持多种设备配置。
 
-### 设备配置（Profiles）
+## 架构
 
-项目通过 `profiles/` 目录管理不同设备的构建参数。每个 `.env` 文件定义一个设备配置：
+```
+openwrt-image-builder/
+├── .github/workflows/build-image.yml   # GitHub Actions workflow
+├── config/
+│   ├── schema.json                      # 配置文件 JSON Schema
+│   └── profiles/                        # 设备配置文件
+│       ├── friendlyarm_nanopi-r2s.json
+│       └── x86_64.json
+├── files/                               # 注入固件的系统文件
+├── scripts/
+│   ├── build.sh                         # 主构建入口
+│   ├── validate.sh                      # Preflight 依赖预检
+│   ├── discover.sh                      # 包发现工具
+│   └── lib/
+│       ├── bootstrap.sh                 # ImageBuilder 下载/解压/缓存
+│       ├── common.sh                    # 日志、下载函数
+│       ├── package_manager.sh           # 第三方 APK 生命周期
+│       └── validator.py                 # JSON Schema 验证器
+└── README.md
+```
 
-| 配置文件 | 设备 | 架构 | 根分区 |
-|----------|------|------|--------|
-| `friendlyarm_nanopi-r2s` | NanoPi R2S | rockchip/armv8 | 512 MB |
-| `x86_64` | x86 虚拟机/物理机 | x86/64 | 1024 MB |
+## 构建流程
 
-配置文件包含：`TARGET`、`PROFILE`、`EXTRA_IMAGE_NAME`、`ROOTFS_PARTSIZE`、`DAEDE_ARCH`、`IMAGEBUILDER_URL`、`EXTRA_PACKAGES`。
+`build.sh` 执行 6 步流水线：
 
-### 默认固件
+1. **配置验证** — JSON Schema 静态校验，阻止格式错误
+2. **Bootstrap** — 下载并解压 ImmortalWrt ImageBuilder（带缓存）
+3. **第三方 APK** — 从 GitHub Release 下载 luci-app-daede 等包
+4. **Preflight** — `make manifest` 依赖求解预检
+5. **注入文件** — 复制 `files/` 和设备专属 overlay
+6. **构建固件** — `make image` 生成最终固件
 
-- 版本：ImmortalWrt `25.12-SNAPSHOT`
-- 默认设备：NanoPi R2S (`friendlyarm_nanopi-r2s`)
-- ImageBuilder URL：从设备配置文件中读取
+## 现有设备配置
 
-### 预装与精简
+| 配置文件 | 设备 | 架构 | daede 架构 | 根分区 |
+|----------|------|------|-----------|--------|
+| `friendlyarm_nanopi-r2s` | NanoPi R2S | rockchip/armv8 | aarch64_cortex-a53 | 512 MB |
+| `x86_64` | x86 虚拟机/物理机 | x86/64 | x86_64 | 1024 MB |
 
-R2S 配置在 `EXTRA_PACKAGES` 中精简了以下 ImmortalWrt 默认包：
+## 添加新设备
 
-| 移除的包 | 原因 |
-|----------|------|
-| `luci-app-attendedsysupgrade` | R2S 用户多为手动刷写，此后台守护进程占内存 |
-| `luci-app-wifihistory` / `advancedplus` / `filemanager` / `wizard` | 冗余 LuCI 应用 |
-| `coremark` | 基准测试工具，非生产必需 |
-| `ds-lite` / `usb-modeswitch` | 国内极少使用 |
+### 1. 创建配置文件
 
-### 首次启动默认值
+在 `config/profiles/` 目录创建 JSON 文件，文件名即设备名：
 
-生成的固件首次启动时会应用以下默认配置：
+```bash
+# 例如添加 NanoPi R5S
+cp config/profiles/friendlyarm_nanopi-r2s.json config/profiles/friendlyarm_nanopi-r5s.json
+```
+
+### 2. 编辑配置
+
+配置文件字段说明：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `target` | string | 是 | OpenWrt 架构，如 `rockchip/armv8`、`x86/64` |
+| `profile` | string | 是 | 设备 profile 名，如 `friendlyarm_nanopi-r2s`、`generic` |
+| `extra_image_name` | string | 是 | 输出文件名后缀，如 `r2s`、`x86` |
+| `rootfs_partsize` | integer | 是 | 根文件系统分区大小（MB） |
+| `imagebuilder_url` | string | 是 | ImmortalWrt ImageBuilder 下载地址 |
+| `daede_arch` | string | 否 | daede APK 的架构名（见下表） |
+| `packages.add` | array | 是 | 要安装的包列表 |
+| `packages.remove` | array | 是 | 要移除的包列表 |
+| `custom_apks` | array | 否 | 第三方 APK 定义 |
+
+#### daede 架构对照表
+
+daede release 使用 OpenWrt 子架构命名，**不是** 裸架构名：
+
+| 裸架构 | 正确的 `daede_arch` |
+|--------|---------------------|
+| aarch64 (Cortex-A53) | `aarch64_cortex-a53` |
+| aarch64 (Cortex-A72) | `aarch64_cortex-a72` |
+| aarch64 (通用) | `aarch64_generic` |
+| x86_64 | `x86_64` |
+| armv7 (Cortex-A7) | `arm_cortex-a7_neon-vfpv4` |
+| armv7 (Cortex-A9) | `arm_cortex-a9_neon` |
+| i386 | `i386_pentium4` |
+
+#### 自定义 APK 示例
+
+`custom_apks` 支持两种来源：
+
+```json
+"custom_apks": [
+  {
+    "name": "luci-app-daede",
+    "source_type": "github_release",
+    "repo": "kenzok8/openwrt-daede",
+    "tag": "latest",
+    "arch": "aarch64_cortex-a53"
+  },
+  {
+    "name": "my-package",
+    "source_type": "direct_url",
+    "url": "https://example.com/my-package.apk"
+  }
+]
+```
+
+### 3. 更新 Workflow
+
+在 `.github/workflows/build-image.yml` 的 `profile` 选项中添加新设备：
+
+```yaml
+options:
+  - "friendlyarm_nanopi-r2s"
+  - "friendlyarm_nanopi-r5s"  # 添加这一行
+  - "x86_64"
+```
+
+### 4. （可选）设备专属 overlay
+
+如果设备需要特殊配置文件，创建 overlay 目录：
+
+```bash
+mkdir -p config/profiles/friendlyarm_nanopi-r5s/files/etc/uci-defaults
+```
+
+该目录下的文件会在构建时合并到固件的 `/etc/` 中。
+
+### 5. 本地测试
+
+```bash
+scripts/build.sh config/profiles/friendlyarm_nanopi-r5s.json
+```
+
+## 本地构建
+
+### 前置依赖
+
+```bash
+sudo apt-get install -y \
+  build-essential clang flex bison gawk gettext git \
+  libncurses-dev libssl-dev python3 python3-distutils \
+  rsync unzip zstd file wget curl jq
+```
+
+### 构建命令
+
+```bash
+# 指定配置文件
+scripts/build.sh config/profiles/friendlyarm_nanopi-r2s.json
+
+# 环境变量覆盖
+PREFLIGHT=0 scripts/build.sh config/profiles/x86_64.json
+
+# 发现某配置可用的内置包
+scripts/discover.sh config/profiles/friendlyarm_nanopi-r2s.json | grep dae
+```
+
+### 构建产物
+
+输出在 `out/` 目录：
+
+- `daede-<name>-squashfs-efi.img.gz` — EFI 引导镜像（dd 写盘）
+- `daede-<name>-squashfs-sdcard.img.gz` — SD 卡镜像
+- `daede-<name>-rootfs.tar.gz` — 裸文件系统（LXC 容器用）
+- `daede-<name>.manifest` — 已安装包清单
+- `sha256sums` — 校验和
+
+## GitHub Actions
+
+运行 `Build daede image` workflow：
+
+| 输入项 | 默认值 | 说明 |
+|--------|--------|------|
+| `profile` | `friendlyarm_nanopi-r2s` | 目标设备配置 |
+| `publish_release` | `false` | 发布到 GitHub Release |
+| `preflight` | `true` | 构建前依赖预检 |
+
+## 首次启动默认值
 
 - LAN IP：`192.168.100.1/24`
-- WAN：DHCP（自动获取网关和 DNS）
+- WAN：DHCP
 - SSH 端口：`22`
-- Root 密码：`password`
-- IPv6：已启用
-- Web 界面：nginx 反向代理 LuCI，HTTPS（自签名证书），端口 443
-  - HTTP 请求自动跳转到 HTTPS
-  - LuCI 同时可通过 `/op/` 路径访问
-
-固件内置 root 密码为 `password`，首次登录后请修改密码。如需无人值守登录，
-请通过私有 workflow 或 secret 注入 SSH 公钥。
-
-### 构建
-
-在 GitHub Actions 手动运行 `Build daede image` workflow。
-
-workflow 会把生成的固件作为 artifact 上传。当 `publish_release` 设置为
-`true` 时，也会发布 GitHub Release。
-
-常用输入项：
-
-- `device_profile`：选择目标设备配置，默认 `friendlyarm_nanopi-r2s`
-- `publish_release`：是否发布到 GitHub Release，默认 `false`
-- `imagebuilder_url`：可选，覆盖设备配置中的 ImageBuilder URL
-- `preflight`：构建前是否先检查软件包清单，默认 `true`
-- `rootfs_partsize`：可选，覆盖设备配置中的根分区大小（MB）
-- `install_daede`：是否把 `luci-app-daede` 打进固件，默认 `true`
-- `daede_release_tag`：使用哪个 `luci-app-daede` release，默认 `latest`
-- `daede_apk_url`：直接指定 APK 下载地址；填写后优先使用这个地址
-
-默认情况下不需要修改这些输入项，直接运行 workflow 即可生成固件。
-
-### 添加新设备
-
-1. 在 `profiles/` 目录创建 `your_device.env` 文件，参考现有配置文件的格式
-2. 在 workflow 的 `device_profile` 选项中添加新设备名称
-3. 可选：创建 `profiles/your_device/files/` 目录放置设备专属的覆盖文件
-
-也可通过环境变量覆盖参数：
-
-- `DEVICE_PROFILE`：指定设备配置文件名（不含 `.env` 后缀）
-- `DAEDE_RELEASE_TAG`：默认 `latest`
-- `DAEDE_ARCH`：默认 `aarch64`
-- `DAEDE_APK_URL`：指定后直接下载该 APK
-- `INSTALL_DAEDE`：设为 `0` 可跳过内置 daede
+- Root 密码：`password`（首次登录后请修改）
+- Web 界面：nginx 反向代理 LuCI，HTTPS 端口 443
