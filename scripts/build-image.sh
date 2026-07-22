@@ -177,6 +177,22 @@ log_section "安装第三方包"
 install_custom_packages
 log_end
 
+# 重建 APK 索引（确保本地 .apk 文件被正确索引）
+log_section "重建 APK 索引"
+PACKAGES_DIR="$WORK_DIR/imagebuilder/packages"
+if [ -d "$PACKAGES_DIR" ] && ls "$PACKAGES_DIR"/*.apk >/dev/null 2>&1; then
+  rm -f "$PACKAGES_DIR/packages.adb"
+  if (cd "$PACKAGES_DIR" && "../staging_dir/host/bin/apk" mkndx \
+      --allow-untrusted --output packages.adb *.apk 2>&1); then
+    echo "APK 索引已重建: $(ls "$PACKAGES_DIR"/*.apk 2>/dev/null | wc -l) 个包"
+  else
+    echo "WARNING: apk mkndx 失败，本地包可能无法被识别"
+  fi
+else
+  echo "无本地 .apk 文件，跳过索引重建"
+fi
+log_end
+
 cd "$WORK_DIR/imagebuilder"
 
 # 合并包列表: 安装的包 + 要移除的包
@@ -229,6 +245,8 @@ EOF
 
 log_section "Preflight 检查"
 if [ "$PREFLIGHT" = "1" ] || [ "$PREFLIGHT" = "true" ]; then
+  # 确保 packages.adb 被重建（ImageBuilder 的 package_reload 可能跳过）
+  rm -f "$WORK_DIR/imagebuilder/packages/packages.adb"
   if ! make manifest PROFILE="$PROFILE" PACKAGES="$PACKAGES"; then
     diagnose_failure
     exit 1
