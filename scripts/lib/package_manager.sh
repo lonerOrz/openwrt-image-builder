@@ -47,7 +47,6 @@ process_custom_apks() {
   local ib_dir="$1"
   local profile_json="$2"
   local packages_dir="$ib_dir/packages"
-  local apk_tool="$ib_dir/staging_dir/host/bin/apk"
 
   mkdir -p "$packages_dir"
 
@@ -73,38 +72,14 @@ process_custom_apks() {
       arch=$(jq -r ".custom_apks[$i].arch" "$profile_json")
 
       download_url=$(resolve_github_release_url "$repo" "$tag" "$arch")
-      local temp_apk="$packages_dir/${name}_temp.apk"
-      safe_download "$download_url" "$temp_apk"
+      local fname="${download_url##*/}"
 
-      # 用 apk 提取元数据并校验架构
-      if [ -f "$apk_tool" ]; then
-        local meta
-        if ! meta=$("$apk_tool" adbdump "$temp_apk" 2>/dev/null); then
-          log_error "APK 文件损坏或非法: $name"
-          rm -f "$temp_apk"
-          exit 1
-        fi
+      # 去掉文件名中的架构后缀（如 -aarch64_cortex-a53.apk → .apk）
+      # APK 索引要求文件名为 name-version.apk 格式
+      fname="${fname%-${arch}.apk}.apk"
 
-        local real_name real_version real_arch
-        real_name=$(echo "$meta" | sed -n 's/^P: //p' | head -n1)
-        real_version=$(echo "$meta" | sed -n 's/^V: //p' | head -n1)
-        real_arch=$(echo "$meta" | sed -n 's/^A: //p' | head -n1)
-
-        # 架构兼容性检查（允许 all/noarch 或精确匹配）
-        if [ "$real_arch" != "all" ] && [ "$real_arch" != "noarch" ] && [ "$real_arch" != "$arch" ]; then
-          log_error "第三方 APK 架构冲突！期望: $arch, 实际: $real_arch"
-          rm -f "$temp_apk"
-          exit 1
-        fi
-
-        # 规范命名为 NAME-VERSION.apk
-        local dest_apk="$packages_dir/${real_name}-${real_version}.apk"
-        mv "$temp_apk" "$dest_apk"
-        log_info "规范化成功: ${real_name}-${real_version}.apk"
-      else
-        log_warn "未找到 apk 工具，跳过架构校验，使用原始文件名"
-        mv "$temp_apk" "$packages_dir/${name}.apk"
-      fi
+      safe_download "$download_url" "$packages_dir/$fname"
+      log_info "已下载: $fname"
     elif [ "$source_type" = "direct_url" ]; then
       local url
       url=$(jq -r ".custom_apks[$i].url" "$profile_json")
