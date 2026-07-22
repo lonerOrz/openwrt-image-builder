@@ -8,6 +8,15 @@
     "rootfs_partsize": { "type": "integer" },
     "imagebuilder_url": { "type": "string" },
     "daede_arch": { "type": "string" },
+    "system": {
+      "type": "object",
+      "required": ["lan_ip", "root_password"],
+      "properties": {
+        "lan_ip": { "type": "string" },
+        "root_password": { "type": "string" },
+        "ssl_cn": { "type": "string" }
+      }
+    },
     "packages": {
       "type": "object",
       "required": ["add", "remove"],

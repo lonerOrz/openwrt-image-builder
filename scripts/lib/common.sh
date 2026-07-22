@@ -46,7 +46,7 @@ safe_download() {
   local url="$1"
   local dest="$2"
   log_info "正在下载: $url"
-  curl -L --retry 5 --retry-delay 3 --connect-timeout 30 -o "$dest" "$url"
+  curl -f -L --retry 5 --retry-delay 3 --connect-timeout 30 -o "$dest" "$url"
 }
 
 # 获取脚本所在目录的绝对路径

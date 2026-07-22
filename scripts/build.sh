@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 主构建入口: 串联 schema 验证 → bootstrap → 第三方包处理 → 预检 → 构建
+# 主构建入口: 串联 schema 验证 → bootstrap → 第三方包处理 → 预检 → 模板渲染 → 构建
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -19,7 +19,6 @@ if [ -z "$PROFILE_JSON" ] || [ ! -f "$PROFILE_JSON" ]; then
   exit 1
 fi
 
-# 确保传入的配置文件路径是绝对路径
 if [[ "$PROFILE_JSON" != /* ]]; then
   PROFILE_JSON="$PWD/$PROFILE_JSON"
 fi
@@ -45,10 +44,11 @@ IB_DIR=$(bootstrap_imagebuilder "$PROFILE_JSON" "$WORK_DIR")
 log_end
 
 # ============================================
-# 步骤 3: 处理第三方 APK
+# 步骤 3: 处理第三方 APK + 重建本地索引
 # ============================================
-log_section "步骤 3/6: 处理第三方 APK"
+log_section "步骤 3/6: 处理并注册第三方 APK"
 process_custom_apks "$IB_DIR" "$PROFILE_JSON"
+rebuild_local_index "$IB_DIR"
 log_end
 
 # ============================================
@@ -62,16 +62,28 @@ if [ "$PREFLIGHT" = "1" ] || [ "$PREFLIGHT" = "true" ]; then
   fi
   log_end
 else
-  log_info "跳过 Preflight 预检（PREFLIGHT=$PREFLIGHT）。"
+  log_info "跳过 Preflight 预检。"
 fi
 
 # ============================================
-# 步骤 5: 注入自定义系统配置文件
+# 步骤 5: 动态渲染并注入系统配置文件
 # ============================================
-log_section "步骤 5/6: 注入自定义系统配置文件"
+log_section "步骤 5/6: 动态渲染并注入系统配置文件"
 rm -rf "$IB_DIR/files"
+
+RENDER_DIR="$WORK_DIR/rendered_files"
+rm -rf "$RENDER_DIR"
+
 if [ -d "$REPO_DIR/files" ]; then
-  cp -a "$REPO_DIR/files" "$IB_DIR/files"
+  cp -a "$REPO_DIR/files" "$RENDER_DIR"
+
+  # 渲染 .template 文件，将占位符替换为 profile 中的值
+  python3 "$SCRIPT_DIR/lib/templater.py" "$PROFILE_JSON" "$RENDER_DIR"
+
+  # 清理 .template 源文件，只保留渲染后的结果
+  find "$RENDER_DIR" -name "*.template" -delete
+
+  cp -a "$RENDER_DIR" "$IB_DIR/files"
 fi
 
 # 合并设备专属 overlay（如果有）

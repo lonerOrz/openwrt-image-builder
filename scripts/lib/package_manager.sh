@@ -42,7 +42,6 @@ except Exception as e:
 PY
 }
 
-# 处理 custom_apks 数组：下载、校验架构、规范命名
 process_custom_apks() {
   local ib_dir="$1"
   local profile_json="$2"
@@ -50,7 +49,6 @@ process_custom_apks() {
 
   mkdir -p "$packages_dir"
 
-  # 检查是否有 custom_apks 配置
   local apks_count
   apks_count=$(jq '.custom_apks | length' "$profile_json" 2>/dev/null || echo "0")
   if [ "$apks_count" = "0" ] || [ "$apks_count" = "null" ]; then
@@ -60,7 +58,6 @@ process_custom_apks() {
 
   log_info "处理 $apks_count 个第三方 APK..."
 
-  # 逐个处理
   for i in $(seq 0 $((apks_count - 1))); do
     local name source_type repo tag arch download_url
     name=$(jq -r ".custom_apks[$i].name" "$profile_json")
@@ -73,9 +70,6 @@ process_custom_apks() {
 
       download_url=$(resolve_github_release_url "$repo" "$tag" "$arch")
       local fname="${download_url##*/}"
-
-      # 去掉文件名中的架构后缀（如 -aarch64_cortex-a53.apk → .apk）
-      # APK 索引要求文件名为 name-version.apk 格式
       fname="${fname%-${arch}.apk}.apk"
 
       safe_download "$download_url" "$packages_dir/$fname"
@@ -90,22 +84,36 @@ process_custom_apks() {
   done
 }
 
-# 重建 APK 本地索引
+# 重建 APK 本地索引并注册本地源（使用绝对路径解决上游相对路径 Bug）
 rebuild_local_index() {
   local ib_dir="$1"
   local packages_dir="$ib_dir/packages"
   local apk_tool="$ib_dir/staging_dir/host/bin/apk"
+  local repos_file="$ib_dir/repositories"
 
   if [ ! -d "$packages_dir" ] || ! ls "$packages_dir"/*.apk >/dev/null 2>&1; then
-    log_info "无本地 .apk 文件，跳过索引重建。"
+    log_info "无本地 .apk 文件，跳过索引重建与本地源注册。"
     return
   fi
 
   rm -f "$packages_dir/packages.adb"
+  log_info "正在为本地第三方 APK 建立索引..."
+
   if (cd "$packages_dir" && "$apk_tool" mkndx --allow-untrusted --output packages.adb *.apk 2>&1); then
     local count
     count=$(ls "$packages_dir"/*.apk 2>/dev/null | wc -l)
     log_info "本地 APK 索引重建完毕（$count 个包）。"
+
+    # 使用绝对路径 file:// 协议注册本地源，兼容新版 APK 安全策略
+    local abs_packages_dir
+    abs_packages_dir=$(cd "$packages_dir" && pwd)
+
+    if [ -f "$repos_file" ]; then
+      if ! grep -q "$abs_packages_dir" "$repos_file"; then
+        echo "file://$abs_packages_dir/packages.adb" >> "$repos_file"
+        log_info "本地源注册完成: file://$abs_packages_dir/packages.adb"
+      fi
+    fi
   else
     log_error "apk mkndx 失败，本地包可能无法被识别"
     return 1

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # === Network (LAN) ===
-uci set network.lan.ipaddr='192.168.100.1'
+uci set network.lan.ipaddr='{{ LAN_IP }}'
 uci set network.lan.netmask='255.255.255.0'
 uci set network.lan.delegate='0'
 uci commit network
@@ -15,7 +15,7 @@ uci set dropbear.main.Interface='lan'
 uci commit dropbear
 
 # === Root password ===
-echo -e "password\npassword" | passwd root
+echo -e "{{ ROOT_PASSWORD }}\n{{ ROOT_PASSWORD }}" | passwd root
 
 # === IPv6 ===
 uci set network.lan.ipv6='1'
@@ -27,7 +27,6 @@ uci commit network
 uci commit dhcp
 
 # === Configure uhttpd (internal, for LuCI CGI) ===
-# 首次启动时先停止 nginx 和 uhttpd，规避端口抢占
 /etc/init.d/nginx stop 2>/dev/null || true
 /etc/init.d/uhttpd stop 2>/dev/null || true
 
@@ -42,7 +41,7 @@ if [ ! -f "$SSL_DIR/server.crt" ]; then
   openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
     -keyout "$SSL_DIR/server.key" \
     -out "$SSL_DIR/server.crt" \
-    -subj "/CN=OpenWrt/O=ImmortalWrt/C=CN" 2>/dev/null
+    -subj "/CN={{ SSL_CN }}/O=ImmortalWrt/C=CN" 2>/dev/null
 fi
 
 # === nginx configuration ===
@@ -60,7 +59,6 @@ http {
     sendfile on;
     keepalive_timeout 65;
 
-    # HTTP → HTTPS redirect
     server {
         listen 80 default_server;
         listen [::]:80 default_server;
@@ -68,7 +66,6 @@ http {
         return 301 https://$host$request_uri;
     }
 
-    # HTTPS server
     server {
         listen 443 ssl default_server;
         listen [::]:443 ssl default_server;
@@ -79,13 +76,11 @@ http {
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers HIGH:!aNULL:!MD5;
 
-        # /op/ alias → LuCI
         location /op/ {
             alias /www/;
             try_files $uri $uri/ =404;
         }
 
-        # Proxy all requests to uhttpd (handles LuCI CGI)
         location / {
             proxy_pass http://127.0.0.1:8080;
             proxy_redirect http:// $scheme://;
@@ -98,13 +93,11 @@ http {
 }
 NGINX
 
-# === Enable and start services ===
 /etc/init.d/uhttpd enable
 /etc/init.d/uhttpd start
 /etc/init.d/nginx enable
 /etc/init.d/nginx start
 
-# === Restart services ===
 /etc/init.d/network restart
 /etc/init.d/dropbear enable
 /etc/init.d/dropbear restart
