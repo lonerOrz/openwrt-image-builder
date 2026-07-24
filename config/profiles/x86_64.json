@@ -55,6 +55,12 @@
       "repo": "kenzok8/openwrt-daede",
       "tag": "latest",
       "arch": "x86_64"
+    },
+    {
+      "name": "luci-app-store",
+      "source_type": "git_clone",
+      "repo": "wukongdaily/apk",
+      "path": "run/x86"
     }
   ]
 }

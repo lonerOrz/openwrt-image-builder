@@ -66,6 +66,32 @@ except Exception as e:
 PY
 }
 
+# 解包 .run 文件（makeself 格式），提取其中的 .apk 文件
+unpack_run_files() {
+  local src_dir="$1"
+  local dest_dir="$2"
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+
+  for run_file in "$src_dir"/*.run; do
+    [ -f "$run_file" ] || continue
+    log_info "解包: $(basename "$run_file")"
+    # makeself --noexec 解包到临时目录
+    if sh "$run_file" --target "$tmp_dir/unpack" --noexec >/dev/null 2>&1; then
+      # 从解包目录中提取所有 .apk 文件
+      find "$tmp_dir/unpack" -name '*.apk' -exec cp {} "$dest_dir/" \;
+      rm -rf "$tmp_dir/unpack"
+    else
+      log_warn "解包失败: $(basename "$run_file")"
+    fi
+  done
+
+  # 同时也处理子目录中的 .apk 文件（如 wukongdaily/apk 仓库结构）
+  find "$src_dir" -mindepth 2 -maxdepth 2 -name '*.apk' -exec cp {} "$dest_dir/" \;
+
+  rm -rf "$tmp_dir"
+}
+
 process_custom_apks() {
   local ib_dir="$1"
   local profile_json="$2"
@@ -106,6 +132,33 @@ process_custom_apks() {
       local fname="${url##*/}"
       safe_download "$url" "$packages_dir/$fname"
       log_info "下载直链包: $fname"
+    elif [ "$source_type" = "git_clone" ]; then
+      repo=$(jq -r ".custom_apks[$i].repo" "$profile_json")
+      local path
+      path=$(jq -r ".custom_apks[$i].path // \"\"" "$profile_json")
+      local clone_dir
+      clone_dir=$(mktemp -d)
+
+      log_info "克隆仓库: $repo"
+      if git clone --depth=1 "https://github.com/${repo}.git" "$clone_dir/repo" >/dev/null 2>&1; then
+        local src_path="$clone_dir/repo"
+        [ -n "$path" ] && src_path="$clone_dir/repo/$path"
+
+        if [ -d "$src_path" ]; then
+          # 检查是否有 .run 文件需要解包
+          if ls "$src_path"/*.run >/dev/null 2>&1; then
+            unpack_run_files "$src_path" "$packages_dir"
+          fi
+          # 同时也复制直接存在的 .apk 文件
+          find "$src_path" -maxdepth 1 -name '*.apk' -exec cp {} "$packages_dir/" \;
+          log_info "已从 $repo 获取 APK"
+        else
+          log_warn "仓库中路径不存在: $path"
+        fi
+      else
+        log_error "克隆仓库失败: $repo"
+      fi
+      rm -rf "$clone_dir"
     fi
   done
 }

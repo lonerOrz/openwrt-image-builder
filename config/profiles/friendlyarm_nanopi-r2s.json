@@ -54,6 +54,12 @@
       "repo": "kenzok8/openwrt-daede",
       "tag": "latest",
       "arch": "aarch64_cortex-a53"
+    },
+    {
+      "name": "luci-app-store",
+      "source_type": "git_clone",
+      "repo": "wukongdaily/apk",
+      "path": "run/arm64-a53"
     }
   ]
 }

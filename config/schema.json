@@ -59,11 +59,12 @@
         "required": ["name", "source_type"],
         "properties": {
           "name": { "type": "string" },
-          "source_type": { "type": "string", "enum": ["github_release", "direct_url"] },
+          "source_type": { "type": "string", "enum": ["github_release", "direct_url", "git_clone"] },
           "repo": { "type": "string" },
           "tag": { "type": "string" },
           "arch": { "type": "string" },
-          "url": { "type": "string" }
+          "url": { "type": "string" },
+          "path": { "type": "string", "description": "git_clone 模式下，仓库内的子目录路径" }
         }
       }
     }
