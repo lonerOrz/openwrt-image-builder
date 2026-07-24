@@ -78,10 +78,19 @@ if [ -d "$REPO_DIR/files" ]; then
   cp -a "$REPO_DIR/files" "$RENDER_DIR"
 
   # 渲染 .template 文件，将占位符替换为 profile 中的值
+  TEMPLATE_COUNT=$(find "$RENDER_DIR" -name "*.template" 2>/dev/null | wc -l)
+  log_info "模板文件: $TEMPLATE_COUNT 个"
   python3 "$SCRIPT_DIR/lib/templater.py" "$PROFILE_JSON" "$RENDER_DIR"
 
   # 清理 .template 源文件，只保留渲染后的结果
   find "$RENDER_DIR" -name "*.template" -delete
+
+  # 列出注入的文件
+  INJECTED_FILES=$(find "$RENDER_DIR" -type f | wc -l)
+  log_info "注入文件: $INJECTED_FILES 个"
+  find "$RENDER_DIR" -type f | while read -r f; do
+    log_info "  → ${f#"$RENDER_DIR"/}"
+  done
 
   cp -a "$RENDER_DIR" "$IB_DIR/files"
 fi
@@ -108,6 +117,9 @@ ADD_PKGS=$(jq -r '.packages.add | join(" ")' "$PROFILE_JSON")
 REMOVE_PKGS=$(jq -r '.packages.remove | map("-" + .) | join(" ")' "$PROFILE_JSON")
 FINAL_PKGS="$ADD_PKGS $REMOVE_PKGS"
 
+log_info "基础包: ${ADD_PKGS:-无}"
+log_info "移除包: ${REMOVE_PKGS:-无}"
+
 # 动态追加功能包（从 profile features.packages 读取，不硬编码）
 for feat_key in docker store; do
   feat_flag=$(jq -r ".features.\"include_${feat_key}\" // .features.\"enable_${feat_key}\" // false" "$PROFILE_JSON")
@@ -115,15 +127,22 @@ for feat_key in docker store; do
     feat_pkgs=$(jq -r ".features.packages.\"${feat_key}\" // [] | join(\" \")" "$PROFILE_JSON")
     if [ -n "$feat_pkgs" ]; then
       FINAL_PKGS="$FINAL_PKGS $feat_pkgs"
-      log_info "已启用 ${feat_key}，追加: $feat_pkgs"
+      log_info "功能 [$feat_key]: $feat_pkgs"
+    else
+      log_info "功能 [$feat_key]: 已启用，无额外包"
     fi
+  else
+    log_info "功能 [$feat_key]: 未启用"
   fi
 done
 
+log_info ""
+log_info "═══════════════════════════════════════"
 log_info "Target: $(jq -r '.target' "$PROFILE_JSON")"
 log_info "Profile: $TARGET_PROFILE"
 log_info "Rootfs: ${ROOTFS_SIZE}MB"
-log_info "Packages: $FINAL_PKGS"
+log_info "最终包列表: $FINAL_PKGS"
+log_info "═══════════════════════════════════════"
 
 cd "$IB_DIR"
 # 允许信任本地 APK 索引（unsigned/untrusted 签名）
@@ -146,18 +165,29 @@ log_end
 log_section "构建完成"
 cd "$OUT_DIR"
 
-for f in *-combined-efi.img.gz; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-combined-efi.img.gz"; done
-for f in *-combined-efi.img; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-combined-efi.img"; done
-for f in *-squashfs-sdcard.img.gz; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-squashfs-sdcard.img.gz"; done
-for f in *-squashfs-sdcard.img; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-squashfs-sdcard.img"; done
-for f in *-kernel; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-kernel"; done
-for f in *-rootfs.tar.gz; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-rootfs.tar.gz"; done
-for f in *.manifest; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}.manifest"; done
+rename_count=0
+for f in *-combined-efi.img.gz; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-combined-efi.img.gz" && rename_count=$((rename_count+1)); done
+for f in *-combined-efi.img; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-combined-efi.img" && rename_count=$((rename_count+1)); done
+for f in *-squashfs-sdcard.img.gz; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-squashfs-sdcard.img.gz" && rename_count=$((rename_count+1)); done
+for f in *-squashfs-sdcard.img; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-squashfs-sdcard.img" && rename_count=$((rename_count+1)); done
+for f in *-kernel; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-kernel" && rename_count=$((rename_count+1)); done
+for f in *-rootfs.tar.gz; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}-rootfs.tar.gz" && rename_count=$((rename_count+1)); done
+for f in *.manifest; do [ -f "$f" ] && mv "$f" "daede-${EXTRA_NAME}.manifest" && rename_count=$((rename_count+1)); done
+log_info "重命名 $rename_count 个文件"
 
 for f in *.img.gz *.img *.kernel *.tar.gz *.manifest; do
   [ -f "$f" ] || continue
   sha256sum "$f"
 done > sha256sums
+
+# 列出最终输出文件
+log_info "输出文件清单:"
+for f in daede-*; do
+  [ -f "$f" ] || continue
+  local fsize
+  fsize=$(du -h "$f" 2>/dev/null | cut -f1)
+  log_info "  $f ($fsize)"
+done
 
 BUILD_END=$(date +%s)
 BUILD_ELAPSED=$((BUILD_END - BUILD_START))

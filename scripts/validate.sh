@@ -47,8 +47,17 @@ PACKAGES="$ADD_PKGS $REMOVE_PKGS"
 
 log_section "Preflight 依赖求解预检"
 log_info "目标设备: $TARGET_PROFILE"
-log_info "待安装（feed）: $ADD_PKGS"
-log_info "待移除: $REMOVE_PKGS"
+
+# 展示各分类包
+log_info "基础包: ${ADD_PKGS:-无}"
+if [ -n "$REMOVE_PKGS" ]; then
+  log_info "移除包: $REMOVE_PKGS"
+fi
+
+# 展示被排除的 custom_apks 包名
+if [ -n "$CUSTOM_NAMES" ]; then
+  log_info "排除 (custom_apks): $CUSTOM_NAMES"
+fi
 
 cd "$IB_DIR"
 

@@ -73,21 +73,31 @@ unpack_run_files() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
+  local run_count=0
   for run_file in "$src_dir"/*.run; do
     [ -f "$run_file" ] || continue
-    log_info "解包: $(basename "$run_file")"
-    # makeself --noexec 解包到临时目录
+    run_count=$((run_count + 1))
+    local run_name
+    run_name=$(basename "$run_file")
+    log_info "  解包 [$run_count]: $run_name"
     if sh "$run_file" --target "$tmp_dir/unpack" --noexec >/dev/null 2>&1; then
-      # 从解包目录中提取所有 .apk 文件
+      local apk_count
+      apk_count=$(find "$tmp_dir/unpack" -name '*.apk' 2>/dev/null | wc -l)
       find "$tmp_dir/unpack" -name '*.apk' -exec cp {} "$dest_dir/" \;
+      log_info "  提取完成: $apk_count 个 APK"
       rm -rf "$tmp_dir/unpack"
     else
-      log_warn "解包失败: $(basename "$run_file")"
+      log_warn "  解包失败: $run_name"
     fi
   done
 
   # 同时也处理子目录中的 .apk 文件（如 wukongdaily/apk 仓库结构）
-  find "$src_dir" -mindepth 2 -maxdepth 2 -name '*.apk' -exec cp {} "$dest_dir/" \;
+  local sub_apks
+  sub_apks=$(find "$src_dir" -mindepth 2 -maxdepth 2 -name '*.apk' 2>/dev/null | wc -l)
+  if [ "$sub_apks" -gt 0 ]; then
+    find "$src_dir" -mindepth 2 -maxdepth 2 -name '*.apk' -exec cp {} "$dest_dir/" \;
+    log_info "  子目录 APK: $sub_apks 个"
+  fi
 
   rm -rf "$tmp_dir"
 }
@@ -107,16 +117,19 @@ process_custom_apks() {
   fi
 
   log_info "处理 $apks_count 个第三方 APK..."
+  log_info ""
 
   for i in $(seq 0 $((apks_count - 1))); do
     local name source_type repo tag arch download_url
     name=$(jq -r ".custom_apks[$i].name" "$profile_json")
     source_type=$(jq -r ".custom_apks[$i].source_type" "$profile_json")
+    log_info "[$((i+1))/$apks_count] $name ($source_type)"
 
     if [ "$source_type" = "github_release" ]; then
       repo=$(jq -r ".custom_apks[$i].repo" "$profile_json")
       tag=$(jq -r ".custom_apks[$i].tag // \"latest\"" "$profile_json")
       arch=$(jq -r ".custom_apks[$i].arch" "$profile_json")
+      log_info "  仓库: $repo | 标签: $tag | 架构: $arch"
 
       download_url=$(resolve_github_release_url "$repo" "$tag" "$arch" "$name")
       local fname="${download_url##*/}"
@@ -125,41 +138,54 @@ process_custom_apks() {
       fname=$(clean_apk_filename "$fname")
 
       safe_download "$download_url" "$packages_dir/$fname"
-      log_info "已下载: $fname"
+      local fsize
+      fsize=$(du -h "$packages_dir/$fname" 2>/dev/null | cut -f1)
+      log_info "  下载完成: $fname ($fsize)"
     elif [ "$source_type" = "direct_url" ]; then
       local url
       url=$(jq -r ".custom_apks[$i].url" "$profile_json")
+      log_info "  URL: $url"
       local fname="${url##*/}"
       safe_download "$url" "$packages_dir/$fname"
-      log_info "下载直链包: $fname"
+      local fsize
+      fsize=$(du -h "$packages_dir/$fname" 2>/dev/null | cut -f1)
+      log_info "  下载完成: $fname ($fsize)"
     elif [ "$source_type" = "git_clone" ]; then
       repo=$(jq -r ".custom_apks[$i].repo" "$profile_json")
       local path
       path=$(jq -r ".custom_apks[$i].path // \"\"" "$profile_json")
+      log_info "  仓库: $repo | 路径: ${path:-/}"
       local clone_dir
       clone_dir=$(mktemp -d)
 
-      log_info "克隆仓库: $repo"
       if git clone --depth=1 "https://github.com/${repo}.git" "$clone_dir/repo" >/dev/null 2>&1; then
         local src_path="$clone_dir/repo"
         [ -n "$path" ] && src_path="$clone_dir/repo/$path"
 
         if [ -d "$src_path" ]; then
+          local before_count
+          before_count=$(ls "$packages_dir"/*.apk 2>/dev/null | wc -l)
           # 检查是否有 .run 文件需要解包
           if ls "$src_path"/*.run >/dev/null 2>&1; then
             unpack_run_files "$src_path" "$packages_dir"
           fi
           # 同时也复制直接存在的 .apk 文件
           find "$src_path" -maxdepth 1 -name '*.apk' -exec cp {} "$packages_dir/" \;
-          log_info "已从 $repo 获取 APK"
+          local after_count
+          after_count=$(ls "$packages_dir"/*.apk 2>/dev/null | wc -l)
+          local new_apks=$((after_count - before_count))
+          log_info "  获取完成: 新增 $new_apks 个 APK"
         else
-          log_warn "仓库中路径不存在: $path"
+          log_error "  路径不存在: $path"
         fi
       else
-        log_error "克隆仓库失败: $repo"
+        log_error "  克隆失败: $repo"
       fi
       rm -rf "$clone_dir"
+    else
+      log_warn "  未知 source_type: $source_type，跳过"
     fi
+    log_info ""
   done
 }
 
