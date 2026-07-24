@@ -184,7 +184,6 @@ done > sha256sums
 log_info "输出文件清单:"
 for f in daede-*; do
   [ -f "$f" ] || continue
-  local fsize
   fsize=$(du -h "$f" 2>/dev/null | cut -f1)
   log_info "  $f ($fsize)"
 done
