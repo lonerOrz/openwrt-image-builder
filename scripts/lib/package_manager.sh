@@ -4,16 +4,40 @@ set -euo pipefail
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_LIB_DIR/common.sh"
 
+# 检查 APK 文件名是否包含多余架构后缀（_all, _x86_64 等）
+# 25.12.x ImageBuilder 要求文件名与内部元数据完全一致
+# 仅在文件名确实包含多余后缀时才清理，否则保留原始文件名
+clean_apk_filename() {
+  local filename="$1"
+  local cleaned="$filename"
+  # 仅当文件名确实包含已知多余后缀时才清理
+  case "$filename" in
+    *_all.apk|*_x86_64.apk|*-x86-64.apk)
+      cleaned="${filename%_all.apk}"
+      cleaned="${cleaned%_x86_64.apk}"
+      cleaned="${cleaned%-x86-64.apk}"
+      cleaned="${cleaned}.apk"
+      ;;
+    *_aarch64_*.apk|-aarch64-*.apk)
+      cleaned=$(echo "$filename" | sed -E 's/[-_]aarch64_[a-z0-9_-]+\.apk$/.apk/')
+      ;;
+  esac
+  if [ "$cleaned" != "$filename" ]; then
+    log_warn "APK 文件名包含多余架构后缀: $filename -> $cleaned"
+  fi
+  echo "$cleaned"
+}
+
 # 从 GitHub Release 解析 APK 下载地址
 resolve_github_release_url() {
-  local repo="$1" tag="$2" arch="$3"
+  local repo="$1" tag="$2" arch="$3" name="$4"
   local api_url="https://api.github.com/repos/${repo}/releases/latest"
   [ "$tag" != "latest" ] && api_url="https://api.github.com/repos/${repo}/releases/tags/${tag}"
 
-  python3 - "$api_url" "$arch" <<'PY'
+  python3 - "$api_url" "$arch" "$name" <<'PY'
 import json, sys, urllib.request, os
 
-api_url, arch = sys.argv[1:3]
+api_url, arch, pkg_name = sys.argv[1:4]
 req = urllib.request.Request(api_url, headers={
     "Accept": "application/vnd.github+json",
     "User-Agent": "openwrt-imagebuilder",
@@ -28,13 +52,13 @@ try:
     suffix = f"-{arch}.apk"
     urls = [
         a["browser_download_url"] for a in data.get("assets", [])
-        if a["name"].startswith("luci-app-daede-") and a["name"].endswith(suffix)
+        if a["name"].endswith(suffix)
     ]
     if urls:
         print(urls[0])
     else:
         tag = data.get("tag_name", api_url)
-        print(f"luci-app-daede APK for {arch} not found in {tag}", file=sys.stderr)
+        print(f"APK for {arch} not found in {tag}", file=sys.stderr)
         sys.exit(1)
 except Exception as e:
     print(f"Failed to fetch release: {e}", file=sys.stderr)
@@ -68,9 +92,11 @@ process_custom_apks() {
       tag=$(jq -r ".custom_apks[$i].tag // \"latest\"" "$profile_json")
       arch=$(jq -r ".custom_apks[$i].arch" "$profile_json")
 
-      download_url=$(resolve_github_release_url "$repo" "$tag" "$arch")
+      download_url=$(resolve_github_release_url "$repo" "$tag" "$arch" "$name")
       local fname="${download_url##*/}"
-      fname="${fname%-${arch}.apk}.apk"
+      # 25.12.x: 文件名必须与 APK 内部元数据完全一致
+      # 仅清理开发者添加的多余架构后缀（_all, _x86_64 等）
+      fname=$(clean_apk_filename "$fname")
 
       safe_download "$download_url" "$packages_dir/$fname"
       log_info "已下载: $fname"

@@ -11,6 +11,36 @@ on:
         options:
           - "friendlyarm_nanopi-r2s"
           - "x86_64"
+      rootfs_size:
+        description: 固件大小 (MB)，留空使用配置文件默认值
+      custom_router_ip:
+        description: 路由器管理地址
+        default: "192.168.100.1"
+      include_docker:
+        description: 集成 Docker
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      enable_store:
+        description: 集成 iStore 商店
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      enable_pppoe:
+        description: 启用 PPPoE 拨号
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      pppoe_account:
+        description: PPPoE 宽带账号
+      pppoe_password:
+        description: PPPoE 宽带密码
       publish_release:
         description: 把生成的固件发布到 GitHub Release
         required: true
@@ -40,6 +70,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate profile exists
+        run: |
+          PROFILE="config/profiles/${{ inputs.profile }}.json"
+          if [ ! -f "$PROFILE" ]; then
+            echo "::error::配置文件不存在: $PROFILE"
+            echo "可用配置:"
+            ls config/profiles/*.json 2>/dev/null | sed 's|config/profiles/||;s|\.json||'
+            exit 1
+          fi
+          echo "使用配置: $PROFILE"
+
       - name: Install host dependencies
         run: |
           sudo apt-get update
@@ -47,6 +88,28 @@ jobs:
             build-essential clang flex bison gawk gettext git \
             libncurses-dev libssl-dev python3 python3-distutils \
             rsync unzip zstd file wget curl jq qemu-utils genisoimage
+
+      - name: Override profile config
+        run: |
+          PROFILE="config/profiles/${{ inputs.profile }}.json"
+          # 网络配置
+          jq --arg ip "${{ inputs.custom_router_ip }}" \
+             --argjson pppoe "${{ inputs.enable_pppoe }}" \
+             --arg pppoe_acc "${{ inputs.pppoe_account }}" \
+             --arg pppoe_pwd "${{ inputs.pppoe_password }}" \
+             '.network.lan_ip=$ip | .network.enable_pppoe=$pppoe | .network.pppoe_account=$pppoe_acc | .network.pppoe_password=$pppoe_pwd | .system.lan_ip=$ip' \
+             "$PROFILE" > "${PROFILE}.tmp" && mv "${PROFILE}.tmp" "$PROFILE"
+          # 功能开关
+          jq --argjson docker "${{ inputs.include_docker }}" \
+             --argjson store "${{ inputs.enable_store }}" \
+             '.features.include_docker=$docker | .features.enable_store=$store' \
+             "$PROFILE" > "${PROFILE}.tmp" && mv "${PROFILE}.tmp" "$PROFILE"
+          # rootfs 大小（非空时覆盖）
+          if [ -n "${{ inputs.rootfs_size }}" ]; then
+            jq --arg size "${{ inputs.rootfs_size }}" \
+               '.rootfs_partsize=($size|tonumber)' \
+               "$PROFILE" > "${PROFILE}.tmp" && mv "${PROFILE}.tmp" "$PROFILE"
+          fi
 
       - name: Build image
         env:

@@ -23,6 +23,15 @@ TARGET_PROFILE=$(jq -r '.profile' "$PROFILE_JSON")
 ALL_ADD_PKGS=$(jq -r '.packages.add | join(" ")' "$PROFILE_JSON")
 REMOVE_PKGS=$(jq -r '.packages.remove | map("-" + .) | join(" ")' "$PROFILE_JSON")
 
+# 包含功能包（Docker/Store 等）
+for feat_key in docker store; do
+  feat_flag=$(jq -r ".features.\"include_${feat_key}\" // .features.\"enable_${feat_key}\" // false" "$PROFILE_JSON")
+  if [ "$feat_flag" = "true" ]; then
+    feat_pkgs=$(jq -r ".features.packages.\"${feat_key}\" // [] | join(\" \")" "$PROFILE_JSON")
+    ALL_ADD_PKGS="$ALL_ADD_PKGS $feat_pkgs"
+  fi
+done
+
 # 排除 custom_apks 包名——它们是本地 APK，不在远程 feed 中
 CUSTOM_NAMES=$(jq -r '.custom_apks // [] | .[].name' "$PROFILE_JSON" 2>/dev/null || true)
 ADD_PKGS=""

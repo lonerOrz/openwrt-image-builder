@@ -18,10 +18,14 @@ bootstrap_imagebuilder() {
 
   mkdir -p "$work_dir"
 
-  # 下载 ImageBuilder 压缩包（有缓存则跳过）
-  if [ ! -f "$ib_archive" ]; then
+  # 下载 ImageBuilder 压缩包（有缓存则跳过，但 URL 变化时重新下载）
+  local cache_url_file="$work_dir/.ib_url"
+  local cached_url=""
+  [ -f "$cache_url_file" ] && cached_url=$(cat "$cache_url_file")
+  if [ ! -f "$ib_archive" ] || [ "$cached_url" != "$ib_url" ]; then
     log_info "正在获取 ImageBuilder 归档文件..."
     safe_download "$ib_url" "$ib_archive"
+    echo "$ib_url" > "$cache_url_file"
   else
     log_info "发现已缓存的 ImageBuilder 归档，跳过下载。"
   fi

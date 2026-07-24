@@ -17,6 +17,33 @@
         "ssl_cn": { "type": "string" }
       }
     },
+    "network": {
+      "type": "object",
+      "properties": {
+        "lan_ip": { "type": "string" },
+        "root_password": { "type": "string" },
+        "ssl_cn": { "type": "string" },
+        "enable_pppoe": { "type": "boolean" },
+        "pppoe_account": { "type": "string" },
+        "pppoe_password": { "type": "string" }
+      }
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "include_docker": { "type": "boolean" },
+        "enable_store": { "type": "boolean" },
+        "enable_firewall_wan_accept": { "type": "boolean" },
+        "packages": {
+          "type": "object",
+          "description": "功能对应的包列表，启用时自动追加",
+          "properties": {
+            "docker": { "type": "array", "items": { "type": "string" } },
+            "store": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
     "packages": {
       "type": "object",
       "required": ["add", "remove"],

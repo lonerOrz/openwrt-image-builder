@@ -10,12 +10,21 @@ def render_templates(profile_path, target_files_dir):
     with open(profile_path, 'r', encoding='utf-8') as f:
         profile = json.load(f)
 
+    # network 优先级高于 system（向后兼容）
+    network = profile.get("network", {})
     system = profile.get("system", {})
+    features = profile.get("features", {})
+
     context = {
-        "LAN_IP": system.get("lan_ip", "192.168.100.1"),
-        "ROOT_PASSWORD": system.get("root_password", "password"),
-        "SSL_CN": system.get("ssl_cn", "ImmortalWrt"),
+        "LAN_IP": network.get("lan_ip") or system.get("lan_ip", "192.168.100.1"),
+        "ROOT_PASSWORD": network.get("root_password") or system.get("root_password", "password"),
+        "SSL_CN": network.get("ssl_cn") or system.get("ssl_cn", "ImmortalWrt"),
         "EXTRA_IMAGE_NAME": profile.get("extra_image_name", "custom"),
+        "ENABLE_PPPOE": "yes" if network.get("enable_pppoe") else "no",
+        "PPPOE_ACCOUNT": network.get("pppoe_account", ""),
+        "PPPOE_PASSWORD": network.get("pppoe_password", ""),
+        "ENABLE_DOCKER": "yes" if features.get("include_docker") else "no",
+        "ENABLE_FW_WAN": "yes" if features.get("enable_firewall_wan_accept") else "no",
     }
 
     for root, _, files in os.walk(target_files_dir):

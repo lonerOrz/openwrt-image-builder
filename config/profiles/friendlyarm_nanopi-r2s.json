@@ -10,6 +10,23 @@
     "root_password": "password",
     "ssl_cn": "ImmortalWrt"
   },
+  "network": {
+    "lan_ip": "192.168.100.1",
+    "root_password": "password",
+    "ssl_cn": "ImmortalWrt",
+    "enable_pppoe": false,
+    "pppoe_account": "",
+    "pppoe_password": ""
+  },
+  "features": {
+    "include_docker": false,
+    "enable_store": false,
+    "enable_firewall_wan_accept": true,
+    "packages": {
+      "docker": ["luci-i18n-dockerman-zh-cn"],
+      "store": ["luci-app-store"]
+    }
+  },
   "packages": {
     "add": [
       "luci-theme-argon",

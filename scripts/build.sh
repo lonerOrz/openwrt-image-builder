@@ -48,6 +48,7 @@ log_end
 # ============================================
 log_section "步骤 3/6: 处理第三方 APK"
 process_custom_apks "$IB_DIR" "$PROFILE_JSON"
+rebuild_local_index "$IB_DIR"
 log_end
 
 # ============================================
@@ -106,6 +107,18 @@ EXTRA_NAME=$(jq -r '.extra_image_name' "$PROFILE_JSON")
 ADD_PKGS=$(jq -r '.packages.add | join(" ")' "$PROFILE_JSON")
 REMOVE_PKGS=$(jq -r '.packages.remove | map("-" + .) | join(" ")' "$PROFILE_JSON")
 FINAL_PKGS="$ADD_PKGS $REMOVE_PKGS"
+
+# 动态追加功能包（从 profile features.packages 读取，不硬编码）
+for feat_key in docker store; do
+  feat_flag=$(jq -r ".features.\"include_${feat_key}\" // .features.\"enable_${feat_key}\" // false" "$PROFILE_JSON")
+  if [ "$feat_flag" = "true" ]; then
+    feat_pkgs=$(jq -r ".features.packages.\"${feat_key}\" // [] | join(\" \")" "$PROFILE_JSON")
+    if [ -n "$feat_pkgs" ]; then
+      FINAL_PKGS="$FINAL_PKGS $feat_pkgs"
+      log_info "已启用 ${feat_key}，追加: $feat_pkgs"
+    fi
+  fi
+done
 
 log_info "Target: $(jq -r '.target' "$PROFILE_JSON")"
 log_info "Profile: $TARGET_PROFILE"
