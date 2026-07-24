@@ -24,7 +24,7 @@
     "enable_firewall_wan_accept": true,
     "packages": {
       "docker": ["luci-i18n-dockerman-zh-cn"],
-      "store": ["luci-app-store"]
+      "store": []
     }
   },
   "packages": {
